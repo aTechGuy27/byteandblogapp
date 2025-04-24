@@ -1,90 +1,86 @@
 package com.byteandblog.controller;
 
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.client.RestTemplate;
 
-@CrossOrigin(origins = "https://byteandblog.onrender.com/")
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rometools.rome.feed.synd.SyndEntry;
+import com.rometools.rome.feed.synd.SyndFeed;
+import com.rometools.rome.io.SyndFeedInput;
+import com.rometools.rome.io.XmlReader;
+
+@CrossOrigin(origins = "https://byteandblog.onrender.com")
 @RestController
 @RequestMapping("/api/news")
 public class NewsController {
 
     private static final Logger logger = LoggerFactory.getLogger(NewsController.class);
 
-    @Value("${news.api.key}")
-    private String newsApiKey;
-
     @GetMapping("/top-headlines")
-    public ResponseEntity<?> getTopHeadlines(
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "12") int pageSize,
-            @RequestParam(defaultValue = "us") String country) {
+    public ResponseEntity<?> getTopHeadlines() { // Removed @RequestParam parameters
         try {
-            logger.info("Fetching top headlines: page={}, pageSize={}, country={}", page, pageSize, country);
-            String url = String.format(
-                    "https://newsapi.org/v2/top-headlines?apiKey=%s&page=%d&pageSize=%d&country=%s",
-                    newsApiKey, page, pageSize, country);
+            logger.info("Fetching top headlines");
+            // Fetch NPR RSS feed
+            String rssUrl = "https://www.npr.org/rss/rss.php?id=1001";
+            SyndFeedInput input = new SyndFeedInput();
+            SyndFeed feed = input.build(new XmlReader(new URL(rssUrl)));
 
-            // Create RestTemplate instance
-            RestTemplate restTemplate = new RestTemplate();
+            // Get all articles
+            List<SyndEntry> entries = feed.getEntries();
+            int totalResults = entries.size();
+            List<Map<String, Object>> articles = new ArrayList<>();
 
-            // Add browser-like headers
-            HttpHeaders headers = new HttpHeaders();
-            headers.set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
-            headers.set("Accept", "application/json");
-            headers.set("Accept-Language", "en-US,en;q=0.9");
-            headers.set("Referer", "https://byteandblogapp.onrender.com");
+            // Pattern to extract image URL from content:encoded
+            Pattern imagePattern = Pattern.compile("<img src='(.*?)'");
 
-            // Create HTTP entity with headers
-            HttpEntity<String> entity = new HttpEntity<>(headers);
+            // Map all entries to articles
+            for (SyndEntry entry : entries) {
+                Map<String, Object> article = new HashMap<>();
+                article.put("title", entry.getTitle());
+                article.put("description", entry.getDescription() != null ? entry.getDescription().getValue() : "");
+                article.put("url", entry.getLink());
+                article.put("publishedAt", entry.getPublishedDate() != null ? entry.getPublishedDate().toString() : "");
+                article.put("source", Map.of("name", "NPR"));
+                article.put("author", entry.getAuthor());
 
-            // Make the request with headers
-            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+                // Extract image URL from content:encoded
+                String contentEncoded = entry.getContents().isEmpty() ? "" : entry.getContents().get(0).getValue();
+                String urlToImage = null;
+                if (contentEncoded != null) {
+                    Matcher matcher = imagePattern.matcher(contentEncoded);
+                    if (matcher.find()) {
+                        urlToImage = matcher.group(1);
+                    }
+                }
+                article.put("urlToImage", urlToImage);
+
+                articles.add(article);
+            }
+
+            // Construct response in NewsAPI-compatible format
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "ok");
+            response.put("totalResults", totalResults);
+            response.put("articles", articles);
 
             logger.info("Successfully fetched top headlines");
-            return ResponseEntity.ok(response.getBody());
+            return ResponseEntity.ok(new ObjectMapper().writeValueAsString(response));
         } catch (Exception e) {
-        	logger.error("Failed to fetch top headlines: {}", e.getMessage(), e);
-            // Fallback to mock data
-            String mockResponse = """
-                {
-                  "status": "ok",
-                  "totalResults": 36,
-                  "articles": [
-                    {
-                      "source": { "id": null, "name": "Mock News" },
-                      "author": "Mock Author",
-                      "title": "Mock News Article 1",
-                      "description": "This is a mock news article for testing purposes.",
-                      "url": "https://example.com/mock-news-1",
-                      "urlToImage": "https://via.placeholder.com/150",
-                      "publishedAt": "2025-04-25T12:00:00Z",
-                      "content": "This is a mock news article content."
-                    },
-                    {
-                      "source": { "id": null, "name": "Mock News" },
-                      "author": "Mock Author",
-                      "title": "Mock News Article 2",
-                      "description": "This is another mock news article for testing purposes.",
-                      "url": "https://example.com/mock-news-2",
-                      "urlToImage": "https://via.placeholder.com/150",
-                      "publishedAt": "2025-04-25T12:00:00Z",
-                      "content": "This is another mock news article content."
-                    }
-                  ]
-                }
-                """;
-            return ResponseEntity.ok(mockResponse);
+            logger.error("Failed to fetch top headlines: {}", e.getMessage(), e);
+            return ResponseEntity.status(500).body("Failed to fetch news: " + e.getMessage());
         }
     }
 }
