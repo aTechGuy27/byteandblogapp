@@ -31,10 +31,12 @@ public class SecurityConfig {
                 .requestMatchers(new AntPathRequestMatcher("/", "GET")).permitAll()
                 .requestMatchers(new AntPathRequestMatcher("/index.html", "GET")).permitAll()
                 .requestMatchers(new AntPathRequestMatcher("/static/**", "GET")).permitAll()
+                .requestMatchers(new AntPathRequestMatcher("/static/media/**", "GET")).permitAll()
+                .requestMatchers(new AntPathRequestMatcher("/faviconc.ico", "GET")).permitAll()
                 // Allow public endpoints for GET requests
                 .requestMatchers(new AntPathRequestMatcher("/Uploads/**", "GET")).permitAll()
                 .requestMatchers(new AntPathRequestMatcher("/uploads/**", "GET")).permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/blog", "/api/blog/**", "/api/portfolio","/api/comments/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/blog", "/api/blog/**", "/api/portfolio","/api/comments/**","/api/news/**").permitAll()
                 // Allow public endpoints
                 .requestMatchers("/api/auth/**", "/api/contact").permitAll()
                 // Restrict blog and portfolio creation to ROLE_ADMIN
